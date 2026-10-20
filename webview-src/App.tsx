@@ -21,6 +21,7 @@ import type {
   ContainerInfo,
   ExtensionToWebviewMessage,
   PositionUpdateMessage,
+  ReadyMessage,
 } from '../src/protocol';
 
 // @xyflow/react v12 requires node data to extend Record<string, unknown>.
@@ -443,6 +444,11 @@ function Canvas({ onEngine, onError }: CanvasProps) {
     };
 
     window.addEventListener('message', handler);
+
+    // Tell the host we are listening. Until this arrives the host sends nothing,
+    // because messages posted to a loading webview are dropped on the floor.
+    vscode.postMessage({ kind: 'ready' } satisfies ReadyMessage);
+
     return () => window.removeEventListener('message', handler);
   }, [fitView, onEngine, onError]);
 
