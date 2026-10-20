@@ -4,7 +4,7 @@ const esbuild = require('esbuild');
 const watch = process.argv.includes('--watch');
 
 /** @type {import('esbuild').BuildOptions} */
-const buildOptions = {
+const extensionBuild = {
   entryPoints: ['src/extension.ts'],
   bundle: true,
   outfile: 'dist/extension.js',
@@ -18,11 +18,34 @@ const buildOptions = {
   logLevel: 'info',
 };
 
+/** @type {import('esbuild').BuildOptions} */
+const webviewBuild = {
+  entryPoints: ['webview-src/index.tsx'],
+  bundle: true,
+  // CSS is emitted as dist/webview/index.css alongside the JS
+  outdir: 'dist/webview',
+  format: 'iife',
+  platform: 'browser',
+  target: 'es2020',
+  // Use the automatic JSX runtime (React 17+ — no need to import React in every file)
+  jsx: 'automatic',
+  sourcemap: true,
+  minify: false,
+  logLevel: 'info',
+};
+
 if (watch) {
-  esbuild.context(buildOptions).then((ctx) => {
-    ctx.watch();
-    console.log('Watching for changes...');
-  });
+  Promise.all([
+    esbuild.context(extensionBuild).then((ctx) => {
+      void ctx.watch();
+    }),
+    esbuild.context(webviewBuild).then((ctx) => {
+      void ctx.watch();
+    }),
+  ]).then(() => console.log('Watching for changes…'));
 } else {
-  esbuild.build(buildOptions).catch(() => process.exit(1));
+  Promise.all([
+    esbuild.build(extensionBuild),
+    esbuild.build(webviewBuild),
+  ]).catch(() => process.exit(1));
 }
