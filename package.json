@@ -31,12 +31,44 @@
       {
         "command": "dockerCanvas.listContainers",
         "title": "Docker Canvas: List Containers"
+      },
+      {
+        "command": "dockerCanvas.startContainer",
+        "title": "Start Container"
+      },
+      {
+        "command": "dockerCanvas.stopContainer",
+        "title": "Stop Container"
+      },
+      {
+        "command": "dockerCanvas.restartContainer",
+        "title": "Restart Container"
       }
     ],
     "menus": {
       "commandPalette": [
         { "command": "dockerCanvas.openCanvas" },
-        { "command": "dockerCanvas.listContainers" }
+        { "command": "dockerCanvas.listContainers" },
+        { "command": "dockerCanvas.startContainer", "when": "false" },
+        { "command": "dockerCanvas.stopContainer", "when": "false" },
+        { "command": "dockerCanvas.restartContainer", "when": "false" }
+      ],
+      "webview/context": [
+        {
+          "command": "dockerCanvas.startContainer",
+          "when": "webviewId == 'dockerCanvas' && webviewSection == 'container' && !running",
+          "group": "containers@1"
+        },
+        {
+          "command": "dockerCanvas.stopContainer",
+          "when": "webviewId == 'dockerCanvas' && webviewSection == 'container' && running",
+          "group": "containers@2"
+        },
+        {
+          "command": "dockerCanvas.restartContainer",
+          "when": "webviewId == 'dockerCanvas' && webviewSection == 'container' && running",
+          "group": "containers@3"
+        }
       ]
     }
   },

@@ -35,6 +35,12 @@ export interface ContainerInfo {
   composeProject?: string;
   /** Names of all networks this container is attached to. */
   networks: string[];
+  /**
+   * Optimistic pending action badge. Set by the extension host immediately
+   * after a start/stop/restart command; cleared when the resulting Docker
+   * event arrives or on error.
+   */
+  pending?: 'start' | 'stop' | 'restart';
 }
 
 // ── Extension → Webview ──────────────────────────────────────────────────────
@@ -84,7 +90,9 @@ export type ExtensionToWebviewMessage =
 
 /**
  * Sent when the user triggers a container lifecycle action from the canvas.
- * (start / stop / restart via right-click menu — planned for v0.2)
+ * In practice the VS Code native webview/context menu invokes the registered
+ * command directly in the extension host; this message type is retained as a
+ * fallback for webview-initiated actions.
  */
 export interface ActionMessage {
   kind: 'action';

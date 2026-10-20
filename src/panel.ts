@@ -21,6 +21,15 @@ export class CanvasPanel implements vscode.Disposable {
   private _reconnectDelay = 1_000; // ms; doubles on each failure, caps at MAX
   private static readonly _MAX_RECONNECT_DELAY = 30_000;
 
+  /** Active Docker client, set after a successful connection. */
+  private _docker: Docker | undefined;
+
+  /**
+   * Local mirror of the canvas state, keyed by container ID.
+   * Used to build optimistic pending patches and to restore state on error.
+   */
+  private readonly _containerMap = new Map<string, ContainerInfo>();
+
   // ── Factory ───────────────────────────────────────────────────────────────
 
   public static async createOrShow(extensionUri: vscode.Uri): Promise<void> {
@@ -83,6 +92,50 @@ export class CanvasPanel implements vscode.Disposable {
     void this._sendSnapshot();
   }
 
+  // ── Public action API (called by VS Code webview/context commands) ─────────
+
+  /**
+   * Starts, stops, or restarts a container.
+   *
+   * Flow:
+   * 1. Post an optimistic `patch` with `pending` set so the webview shows a badge.
+   * 2. Call the Docker API.
+   * 3. On success: the resulting Docker event arrives via the event stream and
+   *    posts a fresh patch (no `pending`), clearing the badge automatically.
+   * 4. On failure: post the original container info (no `pending`) to clear the
+   *    badge, then show a VS Code error notification.
+   */
+  public async performAction(
+    action: 'start' | 'stop' | 'restart',
+    containerId: string,
+  ): Promise<void> {
+    const docker = this._docker;
+    if (!docker) return;
+
+    const original = this._containerMap.get(containerId);
+    if (!original) return;
+
+    // Optimistic pending badge
+    const optimistic: ContainerInfo = { ...original, pending: action };
+    this._containerMap.set(containerId, optimistic);
+    this._post({ kind: 'patch', added: [], updated: [optimistic], removed: [] });
+
+    try {
+      const container = docker.getContainer(containerId);
+      if (action === 'start') await container.start();
+      else if (action === 'stop') await container.stop();
+      else await container.restart();
+      // The Docker event stream will send the authoritative state; no extra patch needed.
+    } catch (err) {
+      // Restore original state and surface the error.
+      this._containerMap.set(containerId, original);
+      this._post({ kind: 'patch', added: [], updated: [original], removed: [] });
+      void vscode.window.showErrorMessage(
+        `Docker Canvas: failed to ${action} "${original.name}" — ${String(err)}`,
+      );
+    }
+  }
+
   // ── Docker interaction ────────────────────────────────────────────────────
 
   private async _sendSnapshot(): Promise<void> {
@@ -115,6 +168,9 @@ export class CanvasPanel implements vscode.Disposable {
       return;
     }
 
+    // Store the active client so performAction can use it.
+    this._docker = docker;
+
     const containers: ContainerInfo[] = rawList.map((c) => ({
       id: c.Id,
       name: (c.Names[0] ?? '').replace(/^\//, ''),
@@ -124,6 +180,12 @@ export class CanvasPanel implements vscode.Disposable {
       composeProject: c.Labels?.['com.docker.compose.project'] ?? undefined,
       networks: Object.keys(c.NetworkSettings?.Networks ?? {}),
     }));
+
+    // Rebuild the local mirror.
+    this._containerMap.clear();
+    for (const c of containers) {
+      this._containerMap.set(c.id, c);
+    }
 
     this._post({
       kind: 'snapshot',
@@ -218,6 +280,7 @@ export class CanvasPanel implements vscode.Disposable {
     const { Action: action, id } = event;
 
     if (action === 'destroy') {
+      this._containerMap.delete(id);
       this._post({ kind: 'patch', added: [], updated: [], removed: [id] });
       return;
     }
@@ -229,6 +292,7 @@ export class CanvasPanel implements vscode.Disposable {
 
     try {
       const info = await docker.getContainer(id).inspect();
+      // Note: no `pending` field — this authoritative update clears any badge.
       const containerInfo: ContainerInfo = {
         id: info.Id,
         name: info.Name.replace(/^\//, ''),
@@ -238,6 +302,8 @@ export class CanvasPanel implements vscode.Disposable {
         composeProject: info.Config.Labels?.['com.docker.compose.project'] ?? undefined,
         networks: Object.keys(info.NetworkSettings.Networks ?? {}),
       };
+
+      this._containerMap.set(containerInfo.id, containerInfo);
 
       if (action === 'create') {
         this._post({
@@ -262,7 +328,8 @@ export class CanvasPanel implements vscode.Disposable {
   // ── Webview messages ──────────────────────────────────────────────────────
 
   private _handleWebviewMessage(_msg: WebviewToExtensionMessage): void {
-    // Container lifecycle actions (start / stop / restart) — planned for v0.2
+    // VS Code webview/context commands call performAction() directly in the
+    // extension host; webview-initiated ActionMessages are a fallback path.
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -328,6 +395,8 @@ export class CanvasPanel implements vscode.Disposable {
   public dispose(): void {
     this._cancelReconnect();
     this._stopEventStream();
+    this._docker = undefined;
+    this._containerMap.clear();
     CanvasPanel.currentPanel = undefined;
     this._panel.dispose();
     for (const d of this._disposables) {

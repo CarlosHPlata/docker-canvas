@@ -49,9 +49,20 @@ function ContainerNode({ data }: NodeProps) {
     ? '#4ec9b0'
     : 'var(--vscode-descriptionForeground, #858585)';
 
+  // Context data consumed by the VS Code webview/context menu.
+  // `running` drives the `when` clauses for start/stop/restart visibility.
+  const vscodeContext = JSON.stringify({
+    webviewSection: 'container',
+    containerId: c.id,
+    running: isRunning,
+    preventDefaultContextMenuItems: true,
+  });
+
   return (
     <div
+      data-vscode-context={vscodeContext}
       style={{
+        position: 'relative',
         display: 'flex',
         alignItems: 'center',
         gap: 10,
@@ -118,6 +129,29 @@ function ContainerNode({ data }: NodeProps) {
           )}
         </div>
       </div>
+
+      {/* Optimistic pending badge — shown while a start/stop/restart is in flight. */}
+      {c.pending && (
+        <span
+          style={{
+            position: 'absolute',
+            top: -8,
+            right: 8,
+            fontSize: 9,
+            padding: '2px 6px',
+            borderRadius: 8,
+            background: '#e5c07b',
+            color: '#1e1e1e',
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+            lineHeight: 1,
+            pointerEvents: 'none',
+          }}
+        >
+          {c.pending}…
+        </span>
+      )}
 
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0, pointerEvents: 'none' }} />
     </div>
