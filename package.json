@@ -10,7 +10,8 @@
     "url": "https://github.com/CarlosHPlata/docker-canvas"
   },
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.85.0",
+    "node": ">=22"
   },
   "categories": [
     "Other"
