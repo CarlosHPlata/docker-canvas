@@ -1,3 +1,0 @@
-# This file was the publish workflow; CI has moved to ci.yml.
-# Publishing to the VS Code Marketplace and Open VSX is out of scope.
-# This file is kept as a tombstone so the git rename is traceable.
