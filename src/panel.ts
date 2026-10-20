@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import Docker from 'dockerode';
 import { resolveDockerOptions } from './dockerResolver';
 import type {
+  ContainerHealth,
   ContainerInfo,
   ContainerState,
   ExtensionToWebviewMessage,
@@ -16,6 +17,9 @@ export class CanvasPanel implements vscode.Disposable {
   private readonly _extensionUri: vscode.Uri;
   private readonly _disposables: vscode.Disposable[] = [];
   private _eventsStream: NodeJS.ReadableStream | undefined;
+  private _reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  private _reconnectDelay = 1_000; // ms; doubles on each failure, caps at MAX
+  private static readonly _MAX_RECONNECT_DELAY = 30_000;
 
   // ── Factory ───────────────────────────────────────────────────────────────
 
@@ -82,6 +86,7 @@ export class CanvasPanel implements vscode.Disposable {
   // ── Docker interaction ────────────────────────────────────────────────────
 
   private async _sendSnapshot(): Promise<void> {
+    this._cancelReconnect();
     this._stopEventStream();
 
     let opts: Awaited<ReturnType<typeof resolveDockerOptions>>;
@@ -92,6 +97,7 @@ export class CanvasPanel implements vscode.Disposable {
         kind: 'error',
         message: `Failed to resolve Docker connection: ${String(err)}`,
       });
+      this._scheduleReconnect();
       return;
     }
 
@@ -105,6 +111,7 @@ export class CanvasPanel implements vscode.Disposable {
         kind: 'error',
         message: `Docker API error: ${String(err)}`,
       });
+      this._scheduleReconnect();
       return;
     }
 
@@ -113,6 +120,9 @@ export class CanvasPanel implements vscode.Disposable {
       name: (c.Names[0] ?? '').replace(/^\//, ''),
       image: c.Image,
       state: c.State as ContainerState,
+      health: parseHealthFromStatus(c.Status),
+      composeProject: c.Labels?.['com.docker.compose.project'] ?? undefined,
+      networks: Object.keys(c.NetworkSettings?.Networks ?? {}),
     }));
 
     this._post({
@@ -142,6 +152,7 @@ export class CanvasPanel implements vscode.Disposable {
       })) as NodeJS.ReadableStream;
 
       this._eventsStream = stream;
+      this._reconnectDelay = 1_000; // reset backoff: connection succeeded
 
       stream.on('data', (chunk: Buffer) => {
         let event: { Action: string; id: string };
@@ -153,12 +164,17 @@ export class CanvasPanel implements vscode.Disposable {
         void this._handleDockerEvent(docker, event);
       });
 
-      stream.on('error', () => this._stopEventStream());
+      stream.on('error', () => {
+        this._stopEventStream();
+        this._scheduleReconnect();
+      });
       stream.on('end', () => {
         this._eventsStream = undefined;
+        this._scheduleReconnect();
       });
     } catch {
-      // Docker events unavailable — canvas will not update live, but snapshot is shown
+      // getEvents() itself failed — schedule reconnect with backoff
+      this._scheduleReconnect();
     }
   }
 
@@ -175,6 +191,26 @@ export class CanvasPanel implements vscode.Disposable {
     }
   }
 
+  private _scheduleReconnect(): void {
+    if (!this._panel.visible) return; // onDidChangeViewState will resync on show
+    if (this._reconnectTimer !== undefined) return; // already scheduled
+    const delay = this._reconnectDelay;
+    this._reconnectDelay = Math.min(delay * 2, CanvasPanel._MAX_RECONNECT_DELAY);
+    this._reconnectTimer = setTimeout(() => {
+      this._reconnectTimer = undefined;
+      if (this._panel.visible) {
+        void this._sendSnapshot();
+      }
+    }, delay);
+  }
+
+  private _cancelReconnect(): void {
+    if (this._reconnectTimer !== undefined) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = undefined;
+    }
+  }
+
   private async _handleDockerEvent(
     docker: Docker,
     event: { Action: string; id: string },
@@ -186,16 +222,10 @@ export class CanvasPanel implements vscode.Disposable {
       return;
     }
 
-    const watched = [
-      'create',
-      'start',
-      'stop',
-      'die',
-      'pause',
-      'unpause',
-      'rename',
-    ] as const;
-    if (!(watched as readonly string[]).includes(action)) return;
+    const watchedExact = ['create', 'start', 'stop', 'die', 'pause', 'unpause', 'rename'];
+    // health_status events arrive as "health_status: healthy" / "health_status: unhealthy"
+    const isWatched = watchedExact.includes(action) || action.startsWith('health_status');
+    if (!isWatched) return;
 
     try {
       const info = await docker.getContainer(id).inspect();
@@ -204,6 +234,9 @@ export class CanvasPanel implements vscode.Disposable {
         name: info.Name.replace(/^\//, ''),
         image: info.Config.Image,
         state: info.State.Status as ContainerState,
+        health: (info.State.Health?.Status ?? 'none') as ContainerHealth,
+        composeProject: info.Config.Labels?.['com.docker.compose.project'] ?? undefined,
+        networks: Object.keys(info.NetworkSettings.Networks ?? {}),
       };
 
       if (action === 'create') {
@@ -293,6 +326,7 @@ export class CanvasPanel implements vscode.Disposable {
   // ── Disposable ────────────────────────────────────────────────────────────
 
   public dispose(): void {
+    this._cancelReconnect();
     this._stopEventStream();
     CanvasPanel.currentPanel = undefined;
     this._panel.dispose();
@@ -301,6 +335,18 @@ export class CanvasPanel implements vscode.Disposable {
     }
     this._disposables.length = 0;
   }
+}
+
+/**
+ * Derive health status from the human-readable Status string returned by
+ * `docker.listContainers()`, e.g. "Up 2 hours (healthy)".
+ * Inspect calls give the authoritative value; this is used for the snapshot.
+ */
+function parseHealthFromStatus(status: string): ContainerHealth {
+  if (status.includes('(healthy)')) return 'healthy';
+  if (status.includes('(unhealthy)')) return 'unhealthy';
+  if (status.includes('health:')) return 'starting';
+  return 'none';
 }
 
 function getNonce(): string {
