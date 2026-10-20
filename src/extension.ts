@@ -21,6 +21,42 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   context.subscriptions.push(listCmd);
 
+  // Container lifecycle actions — invoked by the webview/context menu.
+  // The context object from data-vscode-context is passed as the first argument.
+  interface ContainerContext {
+    containerId?: string;
+  }
+
+  const startCmd = vscode.commands.registerCommand(
+    'dockerCanvas.startContainer',
+    (ctx: ContainerContext | undefined) => {
+      if (ctx?.containerId) {
+        void CanvasPanel.currentPanel?.performAction('start', ctx.containerId);
+      }
+    },
+  );
+  context.subscriptions.push(startCmd);
+
+  const stopCmd = vscode.commands.registerCommand(
+    'dockerCanvas.stopContainer',
+    (ctx: ContainerContext | undefined) => {
+      if (ctx?.containerId) {
+        void CanvasPanel.currentPanel?.performAction('stop', ctx.containerId);
+      }
+    },
+  );
+  context.subscriptions.push(stopCmd);
+
+  const restartCmd = vscode.commands.registerCommand(
+    'dockerCanvas.restartContainer',
+    (ctx: ContainerContext | undefined) => {
+      if (ctx?.containerId) {
+        void CanvasPanel.currentPanel?.performAction('restart', ctx.containerId);
+      }
+    },
+  );
+  context.subscriptions.push(restartCmd);
+
   // Auto-run on activation so the diagnostic output channel has data immediately.
   void listContainers();
 }

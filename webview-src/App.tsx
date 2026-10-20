@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, type MouseEvent } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -12,13 +12,12 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import ContainerNode from './ContainerNode';
+import ComposeGroupNode, { type ComposeGroupNodeData } from './ComposeGroupNode';
 import type { ContainerInfo, ExtensionToWebviewMessage } from '../src/protocol';
 
 // @xyflow/react v12 requires node data to extend Record<string, unknown>.
-// ContainerInfo is structurally compatible at runtime; this alias adds the
-// index signature TypeScript needs to satisfy the constraint.
 type ContainerNodeData = ContainerInfo & Record<string, unknown>;
-type ContainerFlowNode = Node<ContainerNodeData>;
+type CanvasNode = Node<Record<string, unknown>>;
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
@@ -27,24 +26,105 @@ const CARD_H = 70;
 const COLS = 4;
 const GAP_X = 40;
 const GAP_Y = 40;
+const GROUP_HEADER_H = 32;
+const GROUP_HEADER_GAP = 8;
 
-function makeNode(c: ContainerInfo, idx: number): ContainerFlowNode {
-  const col = idx % COLS;
-  const row = Math.floor(idx / COLS);
-  return {
-    id: c.id,
-    type: 'container',
-    position: {
-      x: 24 + col * (CARD_W + GAP_X),
-      y: 24 + row * (CARD_H + GAP_Y),
-    },
-    data: c as ContainerNodeData,
-  };
+/**
+ * Compose groups with this many or more containers collapse by default so
+ * large hosts (100+ containers) render without an overwhelming initial layout.
+ */
+const COLLAPSE_THRESHOLD = 4;
+
+// ── Node layout ───────────────────────────────────────────────────────────────
+
+/**
+ * Builds the full React Flow node array from the container list and the current
+ * set of collapsed compose project names.
+ *
+ * Layout order:
+ *   1. Ungrouped containers (no compose project) — standard grid
+ *   2. Compose groups — each prefixed by a header node; collapsed groups omit
+ *      their container children
+ */
+function buildNodes(containers: ContainerInfo[], collapsedGroups: Set<string>): CanvasNode[] {
+  const nodes: CanvasNode[] = [];
+  let currentY = 24;
+
+  // 1. Ungrouped
+  const ungrouped = containers.filter((c) => !c.composeProject);
+  ungrouped.forEach((c, i) => {
+    const col = i % COLS;
+    const row = Math.floor(i / COLS);
+    nodes.push({
+      id: c.id,
+      type: 'container',
+      position: {
+        x: 24 + col * (CARD_W + GAP_X),
+        y: currentY + row * (CARD_H + GAP_Y),
+      },
+      data: c as ContainerNodeData,
+    });
+  });
+
+  if (ungrouped.length > 0) {
+    currentY += Math.ceil(ungrouped.length / COLS) * (CARD_H + GAP_Y) + GAP_Y;
+  }
+
+  // 2. Compose groups — ordered by project name for stable layout
+  const grouped = new Map<string, ContainerInfo[]>();
+  for (const c of containers) {
+    if (c.composeProject) {
+      const list = grouped.get(c.composeProject) ?? [];
+      list.push(c);
+      grouped.set(c.composeProject, list);
+    }
+  }
+
+  const sortedProjects = [...grouped.keys()].sort();
+  for (const project of sortedProjects) {
+    const members = grouped.get(project)!;
+    const collapsed = collapsedGroups.has(project);
+
+    // Group header node
+    nodes.push({
+      id: `group:${project}`,
+      type: 'composeGroup',
+      position: { x: 24, y: currentY },
+      data: { project, count: members.length, collapsed } satisfies ComposeGroupNodeData,
+      draggable: false,
+      selectable: false,
+    });
+    currentY += GROUP_HEADER_H + GROUP_HEADER_GAP;
+
+    if (!collapsed) {
+      members.forEach((c, i) => {
+        const col = i % COLS;
+        const row = Math.floor(i / COLS);
+        nodes.push({
+          id: c.id,
+          type: 'container',
+          position: {
+            x: 24 + col * (CARD_W + GAP_X),
+            y: currentY + row * (CARD_H + GAP_Y),
+          },
+          data: c as ContainerNodeData,
+        });
+      });
+      currentY += Math.ceil(members.length / COLS) * (CARD_H + GAP_Y) + GAP_Y;
+    } else {
+      currentY += GAP_Y;
+    }
+  }
+
+  return nodes;
 }
 
 // ── Node type registry (stable reference, defined outside render) ─────────────
 
-const nodeTypes = { container: ContainerNode };
+const nodeTypes = {
+  container: ContainerNode,
+  composeGroup: ComposeGroupNode,
+};
 
 // ── Header ────────────────────────────────────────────────────────────────────
 
@@ -60,8 +140,7 @@ function Header({ engine, error }: HeaderProps) {
         flexShrink: 0,
         padding: '5px 12px',
         borderBottom: '1px solid var(--vscode-editorGroup-border, #3c3c3c)',
-        background:
-          'var(--vscode-editorGroupHeader-tabsBackground, #252526)',
+        background: 'var(--vscode-editorGroupHeader-tabsBackground, #252526)',
         fontSize: 12,
         display: 'flex',
         gap: 16,
@@ -112,10 +191,26 @@ interface CanvasProps {
 }
 
 function Canvas({ onEngine, onError }: CanvasProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState<ContainerFlowNode>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>([]);
   const [edges, , onEdgesChange] = useEdgesState([]);
   const { fitView } = useReactFlow();
 
+  /** Source-of-truth container list, kept in sync with Docker events. */
+  const [containers, setContainers] = useState<ContainerInfo[]>([]);
+
+  /**
+   * Set of compose project names whose groups are currently collapsed.
+   * Auto-initialised from the snapshot: projects with >= COLLAPSE_THRESHOLD
+   * containers start collapsed.
+   */
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  // Rebuild React Flow nodes whenever the container list or collapse state changes.
+  useEffect(() => {
+    setNodes(buildNodes(containers, collapsedGroups));
+  }, [containers, collapsedGroups, setNodes]);
+
+  // Handle messages from the extension host.
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       const msg = event.data as ExtensionToWebviewMessage;
@@ -123,33 +218,46 @@ function Canvas({ onEngine, onError }: CanvasProps) {
       if (msg.kind === 'snapshot') {
         onEngine(msg.engine);
         onError(null);
-        const newNodes = msg.containers.map(makeNode);
-        setNodes(newNodes);
-        // Fit after React Flow has processed the new nodes
+
+        // Initialise collapsed groups: any project with >= COLLAPSE_THRESHOLD
+        // containers starts collapsed.
+        const projectCounts = new Map<string, number>();
+        for (const c of msg.containers) {
+          if (c.composeProject) {
+            projectCounts.set(
+              c.composeProject,
+              (projectCounts.get(c.composeProject) ?? 0) + 1,
+            );
+          }
+        }
+        const initialCollapsed = new Set<string>();
+        for (const [project, count] of projectCounts.entries()) {
+          if (count >= COLLAPSE_THRESHOLD) {
+            initialCollapsed.add(project);
+          }
+        }
+        setCollapsedGroups(initialCollapsed);
+        setContainers(msg.containers);
+
         requestAnimationFrame(() => {
           fitView({ padding: 0.15, duration: 250 });
         });
       } else if (msg.kind === 'patch') {
-        setNodes((prev) => {
+        setContainers((prev) => {
           let next = [...prev];
 
           if (msg.removed.length > 0) {
             const rm = new Set(msg.removed);
-            next = next.filter((n) => !rm.has(n.id));
+            next = next.filter((c) => !rm.has(c.id));
           }
 
           if (msg.updated.length > 0) {
             const um = new Map(msg.updated.map((c) => [c.id, c]));
-            next = next.map((n) => {
-              const upd = um.get(n.id);
-              return upd ? { ...n, data: upd as ContainerNodeData } : n;
-            });
+            next = next.map((c) => um.get(c.id) ?? c);
           }
 
           if (msg.added.length > 0) {
-            const base = next.length;
-            const newNodes = msg.added.map((c, i) => makeNode(c, base + i));
-            next = [...next, ...newNodes];
+            next = [...next, ...msg.added];
           }
 
           return next;
@@ -161,7 +269,23 @@ function Canvas({ onEngine, onError }: CanvasProps) {
 
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [setNodes, fitView, onEngine, onError]);
+  }, [fitView, onEngine, onError]);
+
+  // Toggle collapse state when a composeGroup node is clicked.
+  const handleNodeClick = useCallback(
+    (_event: MouseEvent, node: CanvasNode) => {
+      if (node.type === 'composeGroup') {
+        const project = (node.data as ComposeGroupNodeData).project;
+        setCollapsedGroups((prev) => {
+          const next = new Set(prev);
+          if (next.has(project)) next.delete(project);
+          else next.add(project);
+          return next;
+        });
+      }
+    },
+    [],
+  );
 
   return (
     <ReactFlow
@@ -170,6 +294,7 @@ function Canvas({ onEngine, onError }: CanvasProps) {
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       nodeTypes={nodeTypes}
+      onNodeClick={handleNodeClick}
       deleteKeyCode={null}
     >
       <Background
