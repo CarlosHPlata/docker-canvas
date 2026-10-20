@@ -62,7 +62,7 @@ The extension resolves the Docker endpoint in this order:
 1. `DOCKER_HOST` environment variable
 2. Active Docker context (`~/.docker/config.json`)
 3. Platform default — `/var/run/docker.sock` on Linux/macOS,
-   `//./pipe/dockerDesktopLinuxEngine` on Windows
+   `//./pipe/docker_engine` on Windows
 
 ## Architecture
 
