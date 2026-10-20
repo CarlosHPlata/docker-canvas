@@ -1,0 +1,43 @@
+{
+  "name": "docker-canvas",
+  "displayName": "Docker Canvas",
+  "description": "Pannable, zoomable canvas of your Docker containers with live updates",
+  "version": "0.1.0",
+  "publisher": "legion",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CarlosHPlata/docker-canvas"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "extensionKind": ["workspace"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "dockerCanvas.listContainers",
+        "title": "Docker Canvas: List Containers"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "node esbuild.config.js",
+    "watch": "node esbuild.config.js --watch",
+    "compile-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dockerode": "^4.0.4"
+  },
+  "devDependencies": {
+    "@types/dockerode": "^3.3.36",
+    "@types/node": "^20.17.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0"
+  }
+}
