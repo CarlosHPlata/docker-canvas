@@ -17,6 +17,9 @@ export type ContainerState =
   | 'removing'
   | 'dead';
 
+/** Docker health-check result surfaced on the canvas. */
+export type ContainerHealth = 'healthy' | 'unhealthy' | 'starting' | 'none';
+
 export interface ContainerInfo {
   /** Full 64-char Docker container ID. */
   id: string;
@@ -26,6 +29,12 @@ export interface ContainerInfo {
   image: string;
   /** Current container lifecycle state. */
   state: ContainerState;
+  /** Health-check status ('none' when no healthcheck is configured). */
+  health: ContainerHealth;
+  /** docker-compose project name, if present in container labels. */
+  composeProject?: string;
+  /** Names of all networks this container is attached to. */
+  networks: string[];
 }
 
 // ── Extension → Webview ──────────────────────────────────────────────────────
