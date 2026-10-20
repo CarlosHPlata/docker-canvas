@@ -8,7 +8,6 @@ Running containers are full colour; stopped ones are dimmed and greyscale.
 Containers are grouped by Compose project so you can see which services form one stack
 and which of them is down.
 
-<!-- Replace this comment with a GIF of the canvas responding to a `docker stop` -->
 
 ## Features
 
@@ -25,12 +24,8 @@ and which of them is down.
 
 ## Requirements
 
-- Docker Desktop (Windows / macOS) **or** the Docker daemon (Linux)
+- Docker Desktop for Windows
 - VS Code 1.85 or later
-
-> **Platform note:** Smoke-tested on Windows with Docker Desktop (named-pipe transport).
-> macOS and Linux verification is pending; do not assume those paths are confirmed until
-> this note is removed.
 
 ## Running it locally
 
@@ -61,8 +56,7 @@ The extension resolves the Docker endpoint in this order:
 
 1. `DOCKER_HOST` environment variable
 2. Active Docker context (`~/.docker/config.json`)
-3. Platform default — `/var/run/docker.sock` on Linux/macOS,
-   `//./pipe/docker_engine` on Windows
+3. Platform default — `//./pipe/docker_engine` on Windows
 
 ## Architecture
 
@@ -78,18 +72,14 @@ dockerode ─► state mirror ─► postMessage ─► React Flow canvas
 workspaceState ◄──────────── positionUpdate
 ```
 
-## Publishing
+## CI
 
-The `publish` workflow (`.github/workflows/publish.yml`) fires on a version tag push
-and publishes to both the VS Code Marketplace and Open VSX.
+The CI workflow (`.github/workflows/ci.yml`) runs on every push and pull request.
+It type-checks both tsconfigs, runs the test suite, builds the extension, packages
+it as a `.vsix`, and uploads the artifact.
 
-```sh
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-Required repository secrets: `VSCE_PAT` (VS Code Marketplace PAT) and
-`OVSX_TOKEN` (Open VSX access token). See the workflow file for details.
+There is currently no automated publishing to the VS Code Marketplace or Open VSX.
+To install a local build, run the commands in **Running it locally** above.
 
 ## Licence
 
