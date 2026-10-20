@@ -12,8 +12,7 @@ There is no screenshot or recorded demo yet. To see the extension in action, ins
 local build following the instructions in **Running it locally** below.
 
 > **Platform note:** this extension has only been executed on Windows with Docker Desktop
-> over the `//./pipe/docker_engine` named-pipe transport. macOS and Linux are out of
-> scope and unverified.
+> over the named-pipe transport. macOS and Linux are out of scope and unverified.
 
 
 ## Features
