@@ -60,7 +60,7 @@ function platformDefaultSocket(): string {
  *   http://host:port
  *   https://host:port
  */
-function parseDockerHost(dockerHost: string): DockerConnectionOptions {
+export function parseDockerHost(dockerHost: string): DockerConnectionOptions {
   // Unix socket
   const unixMatch = /^unix:\/\/(.+)/.exec(dockerHost);
   if (unixMatch) {
