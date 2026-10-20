@@ -32,6 +32,21 @@ and which of them is down.
 > macOS and Linux verification is pending; do not assume those paths are confirmed until
 > this note is removed.
 
+## Running it locally
+
+From a clone, either press `F5` (launches an Extension Development Host via
+`.vscode/launch.json`), or build and install a package into your own VS Code:
+
+```sh
+npm install
+npm run build
+npx @vscode/vsce package --no-dependencies
+code --install-extension docker-canvas-0.1.0.vsix
+```
+
+Then run **Docker Canvas: Open** from the command palette.
+Remove it again with `code --uninstall-extension legion.docker-canvas`.
+
 ## Commands
 
 | Command | Description |
