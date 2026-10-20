@@ -8,7 +8,6 @@ Running containers are full colour; stopped ones are dimmed and greyscale.
 Containers are grouped by Compose project so you can see which services form one stack
 and which of them is down.
 
-<!-- Replace this comment with a GIF of the canvas responding to a `docker stop` -->
 
 ## Features
 
@@ -78,18 +77,14 @@ dockerode ─► state mirror ─► postMessage ─► React Flow canvas
 workspaceState ◄──────────── positionUpdate
 ```
 
-## Publishing
+## CI
 
-The `publish` workflow (`.github/workflows/publish.yml`) fires on a version tag push
-and publishes to both the VS Code Marketplace and Open VSX.
+The CI workflow (`.github/workflows/ci.yml`) runs on every push and pull request.
+It type-checks both tsconfigs, runs the test suite, builds the extension, packages
+it as a `.vsix`, and uploads the artifact.
 
-```sh
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-Required repository secrets: `VSCE_PAT` (VS Code Marketplace PAT) and
-`OVSX_TOKEN` (Open VSX access token). See the workflow file for details.
+There is currently no automated publishing to the VS Code Marketplace or Open VSX.
+To install a local build, run the commands in **Running it locally** above.
 
 ## Licence
 
