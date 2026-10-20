@@ -139,4 +139,16 @@ export interface PositionUpdateMessage {
   y: number;
 }
 
-export type WebviewToExtensionMessage = ActionMessage | PositionUpdateMessage;
+/**
+ * Sent by the webview once its message listener is attached and it is ready to
+ * receive a snapshot. The extension host must not post state before this
+ * arrives — messages posted to a webview that is still loading are dropped.
+ */
+export interface ReadyMessage {
+  kind: 'ready';
+}
+
+export type WebviewToExtensionMessage =
+  | ActionMessage
+  | PositionUpdateMessage
+  | ReadyMessage;

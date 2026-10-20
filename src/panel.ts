@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import Docker from 'dockerode';
 import { resolveDockerOptions } from './dockerResolver';
+import { isWatchedAction, parseEventChunk, type ParsedDockerEvent } from './dockerEvents';
 import type {
   CanvasPosition,
   ContainerHealth,
@@ -100,8 +101,10 @@ export class CanvasPanel implements vscode.Disposable {
       this._disposables,
     );
 
-    // Send the initial snapshot
-    void this._sendSnapshot();
+    // No snapshot is sent here on purpose. The webview bundle is still loading at
+    // this point and VS Code drops messages posted to a webview that has not yet
+    // attached its message listener. The webview sends `ready` when it is
+    // listening, and that is what triggers the first snapshot.
   }
 
   // ── Public action API (called by VS Code webview/context commands) ─────────
@@ -248,13 +251,9 @@ export class CanvasPanel implements vscode.Disposable {
       this._reconnectDelay = 1_000; // reset backoff: connection succeeded
 
       stream.on('data', (chunk: Buffer) => {
-        let event: { Action: string; id: string };
-        try {
-          event = JSON.parse(chunk.toString()) as typeof event;
-        } catch {
-          return;
+        for (const event of parseEventChunk(chunk.toString())) {
+          void this._handleDockerEvent(docker, event);
         }
-        void this._handleDockerEvent(docker, event);
       });
 
       stream.on('error', () => {
@@ -306,9 +305,9 @@ export class CanvasPanel implements vscode.Disposable {
 
   private async _handleDockerEvent(
     docker: Docker,
-    event: { Action: string; id: string },
+    event: ParsedDockerEvent,
   ): Promise<void> {
-    const { Action: action, id } = event;
+    const { action, id } = event;
 
     if (action === 'destroy') {
       this._containerMap.delete(id);
@@ -316,10 +315,7 @@ export class CanvasPanel implements vscode.Disposable {
       return;
     }
 
-    const watchedExact = ['create', 'start', 'stop', 'die', 'pause', 'unpause', 'rename'];
-    // health_status events arrive as "health_status: healthy" / "health_status: unhealthy"
-    const isWatched = watchedExact.includes(action) || action.startsWith('health_status');
-    if (!isWatched) return;
+    if (!isWatchedAction(action)) return;
 
     try {
       const info = await docker.getContainer(id).inspect();
@@ -351,14 +347,23 @@ export class CanvasPanel implements vscode.Disposable {
           removed: [],
         });
       }
-    } catch {
-      // Container disappeared between event and inspect — ignore
+    } catch (err) {
+      // Usually a benign race: the container was removed between the event and
+      // the inspect. Logged rather than swallowed, because a systematic inspect
+      // failure here silently freezes the canvas and is otherwise invisible.
+      console.warn(`Docker Canvas: inspect failed for ${action} on ${id}:`, err);
     }
   }
 
   // ── Webview messages ──────────────────────────────────────────────────────
 
   private _handleWebviewMessage(msg: WebviewToExtensionMessage): void {
+    if (msg.kind === 'ready') {
+      // The webview is listening now, so state will not be dropped.
+      void this._sendSnapshot();
+      return;
+    }
+
     if (msg.kind === 'positionUpdate') {
       const positions =
         this._workspaceState.get<Record<string, CanvasPosition>>(POSITIONS_KEY) ?? {};
