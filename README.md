@@ -24,12 +24,8 @@ and which of them is down.
 
 ## Requirements
 
-- Docker Desktop (Windows / macOS) **or** the Docker daemon (Linux)
+- Docker Desktop for Windows
 - VS Code 1.85 or later
-
-> **Platform note:** Smoke-tested on Windows with Docker Desktop (named-pipe transport).
-> macOS and Linux verification is pending; do not assume those paths are confirmed until
-> this note is removed.
 
 ## Running it locally
 
@@ -60,8 +56,7 @@ The extension resolves the Docker endpoint in this order:
 
 1. `DOCKER_HOST` environment variable
 2. Active Docker context (`~/.docker/config.json`)
-3. Platform default — `/var/run/docker.sock` on Linux/macOS,
-   `//./pipe/docker_engine` on Windows
+3. Platform default — `//./pipe/docker_engine` on Windows
 
 ## Architecture
 
