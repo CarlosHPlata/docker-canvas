@@ -67,10 +67,13 @@ function parseDockerHost(dockerHost: string): DockerConnectionOptions {
     return { socketPath: unixMatch[1] };
   }
 
-  // Windows named pipe: npipe:////./pipe/docker_engine → //./pipe/docker_engine
-  const npipeMatch = /^npipe:\/\/(\/\..+)/.exec(dockerHost);
+  // Windows named pipe. Docker writes the four-slash form
+  // (npipe:////./pipe/docker_engine); the two-slash form is also seen in the
+  // wild. Normalise both to the //./pipe/<name> path dockerode expects.
+  const npipeMatch = /^npipe:\/\/(.+)/.exec(dockerHost);
   if (npipeMatch) {
-    return { socketPath: npipeMatch[1] };
+    const pipePath = (npipeMatch[1] as string).replace(/^\/+/, '');
+    return { socketPath: `//${pipePath}` };
   }
 
   // TCP / HTTP / HTTPS
