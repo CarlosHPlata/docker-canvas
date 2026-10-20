@@ -8,8 +8,10 @@ const extensionBuild = {
   entryPoints: ['src/extension.ts'],
   bundle: true,
   outfile: 'dist/extension.js',
-  // vscode is provided by the extension host at runtime
-  external: ['vscode'],
+  // vscode is provided by the extension host at runtime; ssh2 and cpu-features
+  // ship native .node addons that esbuild cannot bundle — they are loaded from
+  // node_modules/ by the extension host at runtime.
+  external: ['vscode', 'ssh2', 'cpu-features'],
   format: 'cjs',
   platform: 'node',
   target: 'node20',
@@ -42,7 +44,7 @@ if (watch) {
     esbuild.context(webviewBuild).then((ctx) => {
       void ctx.watch();
     }),
-  ]).then(() => console.log('Watching for changes…'));
+  ]).then(() => console.log('Watching for changes\u2026'));
 } else {
   Promise.all([
     esbuild.build(extensionBuild),
