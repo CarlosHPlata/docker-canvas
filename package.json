@@ -25,24 +25,39 @@
   "contributes": {
     "commands": [
       {
+        "command": "dockerCanvas.openCanvas",
+        "title": "Docker Canvas: Open"
+      },
+      {
         "command": "dockerCanvas.listContainers",
         "title": "Docker Canvas: List Containers"
       }
-    ]
+    ],
+    "menus": {
+      "commandPalette": [
+        { "command": "dockerCanvas.openCanvas" },
+        { "command": "dockerCanvas.listContainers" }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run build",
     "build": "node esbuild.config.js",
     "watch": "node esbuild.config.js --watch",
-    "compile-check": "tsc --noEmit",
+    "compile-check": "tsc --noEmit && tsc -p tsconfig.webview.json",
     "test": "vitest run"
   },
   "dependencies": {
-    "dockerode": "^4.0.4"
+    "@xyflow/react": "^12.3.6",
+    "dockerode": "^4.0.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/dockerode": "^3.3.36",
     "@types/node": "^20.17.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
     "@types/vscode": "^1.85.0",
     "esbuild": "^0.24.0",
     "typescript": "^5.7.0",
