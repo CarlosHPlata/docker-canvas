@@ -43,15 +43,35 @@
       {
         "command": "dockerCanvas.restartContainer",
         "title": "Restart Container"
+      },
+      {
+        "command": "dockerCanvas.resetLayout",
+        "title": "Docker Canvas: Reset Layout"
       }
     ],
     "menus": {
       "commandPalette": [
-        { "command": "dockerCanvas.openCanvas" },
-        { "command": "dockerCanvas.listContainers" },
-        { "command": "dockerCanvas.startContainer", "when": "false" },
-        { "command": "dockerCanvas.stopContainer", "when": "false" },
-        { "command": "dockerCanvas.restartContainer", "when": "false" }
+        {
+          "command": "dockerCanvas.openCanvas"
+        },
+        {
+          "command": "dockerCanvas.listContainers"
+        },
+        {
+          "command": "dockerCanvas.resetLayout"
+        },
+        {
+          "command": "dockerCanvas.startContainer",
+          "when": "false"
+        },
+        {
+          "command": "dockerCanvas.stopContainer",
+          "when": "false"
+        },
+        {
+          "command": "dockerCanvas.restartContainer",
+          "when": "false"
+        }
       ],
       "webview/context": [
         {
@@ -80,6 +100,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.1.1",
     "@xyflow/react": "^12.3.6",
     "dockerode": "^4.0.4",
     "react": "^18.3.1",

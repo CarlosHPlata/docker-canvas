@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import Docker from 'dockerode';
 import { resolveDockerOptions } from './dockerResolver';
 import type {
+  CanvasPosition,
   ContainerHealth,
   ContainerInfo,
   ContainerState,
@@ -9,12 +10,15 @@ import type {
   WebviewToExtensionMessage,
 } from './protocol';
 
+const POSITIONS_KEY = 'dockerCanvas.positions';
+
 export class CanvasPanel implements vscode.Disposable {
   public static currentPanel: CanvasPanel | undefined;
   private static readonly viewType = 'dockerCanvas';
 
   private readonly _panel: vscode.WebviewPanel;
   private readonly _extensionUri: vscode.Uri;
+  private readonly _workspaceState: vscode.Memento;
   private readonly _disposables: vscode.Disposable[] = [];
   private _eventsStream: NodeJS.ReadableStream | undefined;
   private _reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -32,7 +36,10 @@ export class CanvasPanel implements vscode.Disposable {
 
   // ── Factory ───────────────────────────────────────────────────────────────
 
-  public static async createOrShow(extensionUri: vscode.Uri): Promise<void> {
+  public static async createOrShow(
+    extensionUri: vscode.Uri,
+    workspaceState: vscode.Memento,
+  ): Promise<void> {
     const column =
       vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One;
 
@@ -55,14 +62,19 @@ export class CanvasPanel implements vscode.Disposable {
       },
     );
 
-    CanvasPanel.currentPanel = new CanvasPanel(panel, extensionUri);
+    CanvasPanel.currentPanel = new CanvasPanel(panel, extensionUri, workspaceState);
   }
 
   // ── Constructor ───────────────────────────────────────────────────────────
 
-  private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
+  private constructor(
+    panel: vscode.WebviewPanel,
+    extensionUri: vscode.Uri,
+    workspaceState: vscode.Memento,
+  ) {
     this._panel = panel;
     this._extensionUri = extensionUri;
+    this._workspaceState = workspaceState;
 
     this._panel.webview.html = this._buildHtml();
 
@@ -136,6 +148,12 @@ export class CanvasPanel implements vscode.Disposable {
     }
   }
 
+  /** Clears all saved positions and tells the webview to re-run dagre. */
+  public async resetLayout(): Promise<void> {
+    await this._workspaceState.update(POSITIONS_KEY, undefined);
+    this._post({ kind: 'resetLayout' });
+  }
+
   // ── Docker interaction ────────────────────────────────────────────────────
 
   private async _sendSnapshot(): Promise<void> {
@@ -148,6 +166,7 @@ export class CanvasPanel implements vscode.Disposable {
     } catch (err) {
       this._post({
         kind: 'error',
+        errorKind: 'no_engine',
         message: `Failed to resolve Docker connection: ${String(err)}`,
       });
       this._scheduleReconnect();
@@ -160,8 +179,16 @@ export class CanvasPanel implements vscode.Disposable {
     try {
       rawList = await docker.listContainers({ all: true });
     } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      const errorKind =
+        error.code === 'EACCES'
+          ? 'permission'
+          : error.code === 'ENOENT' || error.code === 'ECONNREFUSED'
+          ? 'no_engine'
+          : 'unknown';
       this._post({
         kind: 'error',
+        errorKind,
         message: `Docker API error: ${String(err)}`,
       });
       this._scheduleReconnect();
@@ -187,10 +214,14 @@ export class CanvasPanel implements vscode.Disposable {
       this._containerMap.set(c.id, c);
     }
 
+    const positions =
+      this._workspaceState.get<Record<string, CanvasPosition>>(POSITIONS_KEY) ?? {};
+
     this._post({
       kind: 'snapshot',
       engine: this._describeEngine(opts),
       containers,
+      positions,
     });
 
     void this._startEventStream(docker);
@@ -327,8 +358,14 @@ export class CanvasPanel implements vscode.Disposable {
 
   // ── Webview messages ──────────────────────────────────────────────────────
 
-  private _handleWebviewMessage(_msg: WebviewToExtensionMessage): void {
-    // VS Code webview/context commands call performAction() directly in the
+  private _handleWebviewMessage(msg: WebviewToExtensionMessage): void {
+    if (msg.kind === 'positionUpdate') {
+      const positions =
+        this._workspaceState.get<Record<string, CanvasPosition>>(POSITIONS_KEY) ?? {};
+      positions[msg.name] = { x: msg.x, y: msg.y };
+      void this._workspaceState.update(POSITIONS_KEY, positions);
+    }
+    // ActionMessage: VS Code webview/context commands call performAction() directly in the
     // extension host; webview-initiated ActionMessages are a fallback path.
   }
 

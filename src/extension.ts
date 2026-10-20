@@ -11,7 +11,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const openCmd = vscode.commands.registerCommand(
     'dockerCanvas.openCanvas',
-    () => void CanvasPanel.createOrShow(context.extensionUri),
+    () => void CanvasPanel.createOrShow(context.extensionUri, context.workspaceState),
   );
   context.subscriptions.push(openCmd);
 
@@ -20,6 +20,20 @@ export function activate(context: vscode.ExtensionContext): void {
     () => void listContainers(),
   );
   context.subscriptions.push(listCmd);
+
+  const resetLayoutCmd = vscode.commands.registerCommand(
+    'dockerCanvas.resetLayout',
+    () => {
+      if (CanvasPanel.currentPanel) {
+        void CanvasPanel.currentPanel.resetLayout();
+      } else {
+        void vscode.window.showInformationMessage(
+          'Docker Canvas: open the canvas first to reset the layout.',
+        );
+      }
+    },
+  );
+  context.subscriptions.push(resetLayoutCmd);
 
   // Container lifecycle actions — invoked by the webview/context menu.
   // The context object from data-vscode-context is passed as the first argument.

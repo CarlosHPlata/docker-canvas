@@ -43,6 +43,12 @@ export interface ContainerInfo {
   pending?: 'start' | 'stop' | 'restart';
 }
 
+/** Persisted canvas position for a container, keyed by container name. */
+export interface CanvasPosition {
+  x: number;
+  y: number;
+}
+
 // ── Extension → Webview ──────────────────────────────────────────────────────
 
 /**
@@ -58,6 +64,11 @@ export interface SnapshotMessage {
   engine: string;
   /** All containers (running and stopped) at the time of the snapshot. */
   containers: ContainerInfo[];
+  /**
+   * Saved canvas positions keyed by container *name* (stable across recreates).
+   * A container with no entry here gets a dagre-computed position.
+   */
+  positions: Record<string, CanvasPosition>;
 }
 
 /**
@@ -74,17 +85,33 @@ export interface PatchMessage {
 
 /**
  * Sent when the extension fails to connect to or query Docker.
- * The webview should surface this in a visible diagnostic header.
+ * The webview should surface this as a full empty-state, not just a banner.
  */
 export interface ErrorMessage {
   kind: 'error';
+  /**
+   * Machine-readable category so the webview can show the right empty state.
+   *  - 'no_engine'   : Docker daemon not reachable (ENOENT, ECONNREFUSED, …)
+   *  - 'permission'  : Socket exists but access was denied (EACCES)
+   *  - 'unknown'     : Any other error
+   */
+  errorKind: 'no_engine' | 'permission' | 'unknown';
   message: string;
+}
+
+/**
+ * Sent by the extension when the user runs "Docker Canvas: Reset layout".
+ * The webview discards all saved positions and re-runs dagre.
+ */
+export interface ResetLayoutMessage {
+  kind: 'resetLayout';
 }
 
 export type ExtensionToWebviewMessage =
   | SnapshotMessage
   | PatchMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | ResetLayoutMessage;
 
 // ── Webview → Extension ──────────────────────────────────────────────────────
 
@@ -100,4 +127,16 @@ export interface ActionMessage {
   containerId: string;
 }
 
-export type WebviewToExtensionMessage = ActionMessage;
+/**
+ * Sent when the user finishes dragging a container node on the canvas.
+ * The extension host persists this in workspaceState keyed by container name.
+ */
+export interface PositionUpdateMessage {
+  kind: 'positionUpdate';
+  /** Container name (not ID — stable across container recreate). */
+  name: string;
+  x: number;
+  y: number;
+}
+
+export type WebviewToExtensionMessage = ActionMessage | PositionUpdateMessage;
