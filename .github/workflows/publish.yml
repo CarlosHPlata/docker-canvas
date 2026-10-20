@@ -1,0 +1,59 @@
+# Publishes Docker Canvas to the VS Code Marketplace and Open VSX.
+#
+# Triggered by a version tag push (e.g. git tag v0.1.0 && git push --tags).
+#
+# Required repository secrets:
+#   VSCE_PAT   — Personal Access Token from https://marketplace.visualstudio.com/
+#   OVSX_TOKEN — Access token from https://open-vsx.org/
+#
+# The publisher id in package.json must match the publisher registered in each
+# marketplace before running this workflow.
+
+name: Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run compile-check
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Package (.vsix)
+        run: npx vsce package --no-dependencies
+
+      - name: Upload .vsix artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-canvas-vsix
+          path: '*.vsix'
+
+      - name: Publish to VS Code Marketplace
+        run: npx vsce publish --no-dependencies --pat "${{ secrets.VSCE_PAT }}"
+
+      - name: Publish to Open VSX
+        run: npx ovsx publish --pat "${{ secrets.OVSX_TOKEN }}"
