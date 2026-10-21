@@ -5,6 +5,8 @@
 node_modules/**
 src/**
 webview-src/**
+scripts/**
+out_test/**
 **/*.ts
 **/*.tsx
 **/*.map
@@ -12,3 +14,4 @@ tsconfig*.json
 esbuild.config.js
 .gitignore
 .vscodeignore
+.vsixignore
